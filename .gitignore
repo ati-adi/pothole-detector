@@ -1,0 +1,19 @@
+# окружение
+.venv/
+__pycache__/
+*.pyc
+.env*
+.vercel/
+.claude/
+
+# данные и артефакты обучения (train.py скачает и создаст заново)
+datasets/
+runs/
+train.log
+yolo26n.pt
+models/*.pt
+
+# локальные результаты
+data/
+output/
+.DS_Store

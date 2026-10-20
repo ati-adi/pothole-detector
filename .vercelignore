@@ -1,0 +1,14 @@
+# в функцию попадают только код, страница и ONNX-модель
+.venv/
+datasets/
+runs/
+data/
+output/
+examples/
+models/*.pt
+*.pt
+train.log
+train.py
+requirements-train.txt
+__pycache__/
+.claude/

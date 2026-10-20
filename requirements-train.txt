@@ -1,0 +1,4 @@
+-r requirements.txt
+ultralytics>=8.4
+onnx
+onnxslim

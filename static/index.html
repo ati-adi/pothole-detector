@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Детектор ям</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #f6f6f4; --surface: #ffffff; --text: #1c1c1a; --muted: #6b6b66; --border: #e3e2dd;
+    --accent: #2f5bd3; --low: #d9a400; --medium: #e8710a; --high: #d93025; --ok: #188038;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --surface: #1f1f1d; --text: #ecebe6; --muted: #9b9a94; --border: #34332f;
+            --accent: #7aa2ff; --low: #f2c230; --medium: #ff9a3d; --high: #ff6b5e; --ok: #4cc06a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 20px 24px 8px; max-width: 1280px; margin: 0 auto; }
+  h1 { margin: 0; font-size: 22px; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px;
+         padding: 16px 24px 24px; max-width: 1280px; margin: 0 auto; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .drop { display: block; border: 2px dashed var(--border); border-radius: 10px; padding: 28px 16px;
+          text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop:hover, .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+  .drop strong { display: block; font-size: 16px; }
+  .drop span { color: var(--muted); font-size: 13px; }
+  .drop input { display: none; }
+  .opts { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 12px; font-size: 14px; }
+  .opts label { display: flex; gap: 6px; align-items: center; }
+  .status { margin-top: 12px; color: var(--muted); min-height: 1.5em; font-size: 14px; }
+  .status.err { color: var(--high); }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border);
+             border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite;
+             vertical-align: -2px; margin-right: 6px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #result { margin-top: 16px; display: none; }
+  .verdict { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px;
+             font-weight: 600; background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--text);
+             border-left: 4px solid var(--c); }
+  .verdict small { font-weight: 400; color: var(--muted); }
+  #result .main { width: 100%; border-radius: 8px; margin-top: 12px; display: block; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chip { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--border); }
+  .chip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--c); }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; }
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+  .gallery figure { margin: 0; }
+  .gallery img { width: 100%; border-radius: 6px; display: block; }
+  .gallery figcaption { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .map-card { display: flex; flex-direction: column; min-height: 520px; }
+  .map-card h2 { font-size: 16px; margin: 0 0 4px; }
+  .map-card p { margin: 0 0 10px; color: var(--muted); font-size: 13px; }
+  #map { flex: 1; border-radius: 8px; min-height: 440px; }
+  .leaflet-popup-content img { width: 200px; border-radius: 4px; display: block; margin-top: 4px; }
+  @media (max-width: 860px) {
+    main { grid-template-columns: minmax(0, 1fr); padding: 12px 16px 16px; }
+    header { padding: 16px 16px 0; }
+    .map-card { min-height: 420px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Детектор ям</h1>
+  <p>Нейросеть YOLO находит ямы на фото и видео дороги и отмечает их на карте.</p>
+</header>
+<main>
+  <section class="card">
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="image/*,video/*">
+      <strong>Перетащите фото или видео дороги</strong>
+      <span>или нажмите, чтобы выбрать файл · JPG, PNG, HEIC, MP4, MOV</span>
+    </label>
+    <div class="opts">
+      <label><input type="checkbox" id="geo"> Приложить мою геолокацию</label>
+      <label>Чувствительность
+        <input type="range" id="conf" min="0.15" max="0.8" step="0.05" value="0.35">
+        <output id="confv">0.35</output>
+      </label>
+    </div>
+    <div class="status" id="status"></div>
+    <div id="result"></div>
+  </section>
+
+  <section class="card map-card">
+    <h2>Карта ям</h2>
+    <p>Сюда попадают снимки с найденными ямами, у которых есть координаты (GPS из фото или геолокация браузера).</p>
+    <div id="map"></div>
+  </section>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const SEV = { low: "низкая", medium: "средняя", high: "высокая" };
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const sevColor = s => css(s ? `--${s}` : "--ok");
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+$("conf").oninput = e => $("confv").textContent = e.target.value;
+
+// ---- карта ----
+const map = L.map("map").setView([30, 20], 2);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "&copy; OpenStreetMap"
+}).addTo(map);
+const layer = L.layerGroup().addTo(map);
+
+function addMarker(r) {
+  if (!r.gps) return null;
+  const m = L.circleMarker(r.gps, {
+    radius: 6 + Math.min(r.summary.count, 6) * 1.5, color: "#fff", weight: 2,
+    fillColor: sevColor(r.summary.worst), fillOpacity: .9
+  }).bindPopup(
+    `<b>Ям: ${r.summary.count}</b> · опасность ${esc(r.summary.worst_ru)}<br>` +
+    `<small>${esc(r.filename)} · ${new Date(r.created_at).toLocaleString("ru")}</small>` +
+    (r.image_url ? `<img src="${esc(r.image_url)}" alt="">` : "")
+  );
+  layer.addLayer(m);
+  return m;
+}
+
+async function loadReports() {
+  const reports = await fetch("/api/reports").then(r => r.json());
+  layer.clearLayers();
+  const pts = reports.map(addMarker).filter(Boolean).map(m => m.getLatLng());
+  if (pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.3), { maxZoom: 16 });
+}
+loadReports();
+
+// ---- загрузка ----
+const drop = $("drop");
+["dragenter", "dragover"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", ev => ev.dataTransfer.files[0] && analyze(ev.dataTransfer.files[0]));
+$("file").onchange = ev => ev.target.files[0] && analyze(ev.target.files[0]);
+
+function getPosition() {
+  return new Promise(resolve => {
+    if (!$("geo").checked || !navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      p => resolve([p.coords.latitude, p.coords.longitude]),
+      () => resolve(null), { enableHighAccuracy: true, timeout: 8000 });
+  });
+}
+
+function setStatus(html, err = false) { $("status").innerHTML = html; $("status").className = "status" + (err ? " err" : ""); }
+
+let maxUploadMb = null;  // на Vercel тело запроса ограничено 4.5 МБ
+fetch("/api/config").then(r => r.json()).then(c => maxUploadMb = c.max_upload_mb).catch(() => {});
+
+// Крупное фото уменьшаем в браузере. EXIF (и GPS из него) при этом теряется.
+async function shrinkImage(file, limitBytes) {
+  const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+  for (const side of [2560, 1920, 1280]) {
+    const r = Math.min(1, side / Math.max(bmp.width, bmp.height));
+    const c = Object.assign(document.createElement("canvas"), { width: Math.round(bmp.width * r), height: Math.round(bmp.height * r) });
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise(res => c.toBlob(res, "image/jpeg", 0.9));
+    if (blob.size <= limitBytes) return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  }
+  throw new Error("Не удалось уменьшить фото");
+}
+
+async function analyze(file) {
+  const isVideo = file.type.startsWith("video/");
+  let note = "";
+  if (maxUploadMb && file.size > maxUploadMb * 1024 * 1024) {
+    if (isVideo) {
+      setStatus(`Видео ${(file.size / 1048576).toFixed(1)} МБ — на сайте можно до ${maxUploadMb} МБ (несколько секунд записи). Длинные записи обрабатывайте локально: python detect.py видео.mp4`, true);
+      $("file").value = "";
+      return;
+    }
+    try {
+      file = await shrinkImage(file, maxUploadMb * 1024 * 1024 * 0.95);
+      note = $("geo").checked ? "" : " Фото было уменьшено перед отправкой, GPS из него потерян — включите геолокацию, чтобы добавить точку на карту.";
+    } catch (e) {
+      setStatus("Фото слишком большое: " + esc(e.message), true);
+      return;
+    }
+  }
+  setStatus(`<span class="spinner"></span>${isVideo ? "Анализирую видео покадрово, это может занять время…" : "Ищу ямы…"}`);
+  $("result").style.display = "none";
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("conf", $("conf").value);
+  const pos = await getPosition();
+  if (pos) { fd.append("lat", pos[0]); fd.append("lon", pos[1]); }
+  try {
+    const res = await fetch("/api/analyze", { method: "POST", body: fd });
+    const data = await res.json().catch(() => ({ detail: res.status === 413 ? "файл слишком большой" : res.statusText }));
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    render(data);
+    setStatus((data.gps ? "" : "Нет координат — на карту не добавлено. Включите геолокацию или загрузите фото с GPS.") + note);
+    if (data.saved) {
+      addMarker(data)?.openPopup();
+      map.setView(data.gps, 16);
+    }
+  } catch (e) {
+    setStatus("Ошибка: " + esc(e.message), true);
+  }
+  $("file").value = "";
+}
+
+function render(d) {
+  const s = d.summary;
+  const verdict = s.count
+    ? `${s.count} ${plural(s.count, "яма", "ямы", "ям")} · максимальная опасность: ${s.worst_ru}`
+    : "Ям не найдено";
+  const extra = d.type === "video" ? ` <small>· видео ${d.duration_sec} с</small>` : "";
+  const chips = Object.entries(s.by_severity).filter(([, n]) => n)
+    .map(([k, n]) => `<span class="chip" style="--c:${sevColor(k)}"><i></i>${SEV[k]}: ${n}</span>`).join("");
+  let body = "";
+  if (d.type === "image") {
+    body = `<img class="main" src="${esc(d.preview_url)}" alt="Результат">`;
+    if (d.potholes.length) body += table(d.potholes, false);
+  } else if (d.potholes.length) {
+    body = `<div class="gallery">${d.potholes.map((p, i) =>
+      `<figure><img src="${esc(p.image_url)}" alt=""><figcaption>#${i + 1} · ${p.time_sec} с · ${SEV[p.severity]}</figcaption></figure>`).join("")}</div>`
+      + table(d.potholes, true);
+  }
+  $("result").innerHTML = `<div class="verdict" style="--c:${sevColor(s.worst)}">${verdict}${extra}</div>
+    <div class="chips">${chips}</div>${body}`;
+  $("result").style.display = "block";
+}
+
+function table(ps, video) {
+  return `<table><thead><tr><th>#</th>${video ? "<th>Время</th>" : ""}<th>Опасность</th><th>Уверенность</th><th>Доля кадра</th></tr></thead><tbody>${
+    ps.map((p, i) => `<tr><td>${i + 1}</td>${video ? `<td>${p.time_sec} с</td>` : ""}
+      <td><span class="chip" style="--c:${sevColor(p.severity)}"><i></i>${SEV[p.severity]}</span></td>
+      <td>${Math.round(p.confidence * 100)}%</td><td>${(p.area_ratio * 100).toFixed(1)}%</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+</script>
+</body>
+</html>
