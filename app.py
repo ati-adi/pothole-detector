@@ -28,6 +28,8 @@ from storage import LocalStorage, storage
 ROOT = Path(__file__).resolve().parent
 ON_VERCEL = bool(os.environ.get("VERCEL"))
 MAX_UPLOAD_MB = 4.5 if ON_VERCEL else None  # лимит тела запроса Vercel Functions
+# CPU функции Vercel ~8× медленнее Mac: на сайте берём каждый второй кадр (на тестовом видео 12 ям вместо 13, вдвое быстрее)
+VIDEO_STRIDE = 2 if ON_VERCEL else 1
 MAX_GALLERY = 30
 
 
@@ -120,7 +122,7 @@ def analyze(file: UploadFile = File(...), lat: str | None = Form(None), lon: str
             shutil.copyfileobj(file.file, tmp)
         try:
             with _model_lock:
-                res = detect_video(tmp.name, conf=conf)
+                res = detect_video(tmp.name, conf=conf, frame_stride=VIDEO_STRIDE)
         except ValueError:
             raise HTTPException(400, "Не удалось прочитать видео")
         finally:
